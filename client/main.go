@@ -6,24 +6,32 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 )
 
-// main reads the arguments and prints one HTTP/0.9 response.
+// main reads a request from an argument or stdin.
 func main() {
-	// Take 3 arguments:
+	// Take host and port, plus an optional document address.
 	// 1st: host
 	// 2nd: port
-	// 3rd: request
+	// 3rd: document address (optional)
 	args := os.Args[1:]
 
-	if len(args) < 3 {
+	if len(args) < 2 {
 		log.Print("error: missing argument")
 		os.Exit(2)
 	}
 
+	// With two arguments, forward stdin unchanged like nc.
+	var request io.Reader = os.Stdin
+	if len(args) >= 3 {
+		// A request is "GET", a space, the document address, and CRLF.
+		request = strings.NewReader(fmt.Sprintf("GET %s\r\n", args[2]))
+	}
+
 	// An HTTP/0.9 client requests one document at a time.
-	bytesSent, response, err := sendRequest(args[0], args[1], args[2])
+	bytesSent, response, err := sendRequest(args[0], args[1], request)
 	if err != nil {
 		log.Printf("failed to make request: %v", err)
 		os.Exit(1)
@@ -34,12 +42,10 @@ func main() {
 }
 
 // sendRequest fetches one document over HTTP/0.9.
-func sendRequest(host, port, rawRequest string) (int, string, error) {
+func sendRequest(host, port string, request io.Reader) (int64, string, error) {
 	var response []byte
-	var bytesSent int
+	var bytesSent int64
 
-	// A request is "GET", a space, the document address, and CRLF.
-	request := fmt.Sprintf("GET %s\r\n", rawRequest)
 	address := net.JoinHostPort(host, port)
 
 	// The client opens a TCP connection to the given host and port.
@@ -57,9 +63,10 @@ func sendRequest(host, port, rawRequest string) (int, string, error) {
 		}
 	}()
 
-	bytesSent, err = fmt.Fprint(conn, request)
+	// Stream the request into the TCP connection.
+	bytesSent, err = io.Copy(conn, request)
 	if err != nil {
-		return bytesSent, "", fmt.Errorf("failed to send request %s: %w", request, err)
+		return bytesSent, "", fmt.Errorf("failed to send request: %w", err)
 	}
 
 	// The response ends when the server closes the connection.
