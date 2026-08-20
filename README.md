@@ -14,6 +14,7 @@ The code is an educational example. HTTP/0.9 does not have the features expected
 - Closing the connection marks the end of a response.
 - Errors are returned as human-readable HTML.
 - Client-aborted transfers are not recorded as server errors.
+- The server closes inactive connections after about 15 seconds.
 - The server does not keep request state after disconnecting.
 
 ## Requirements

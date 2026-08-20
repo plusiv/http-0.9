@@ -9,11 +9,13 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const (
-	portNumber    = 80
-	errorFilePath = "./error.html"
+	portNumber        = 80
+	errorFilePath     = "./error.html"
+	inactivityTimeout = 15 * time.Second
 )
 
 var crlf []byte = []byte{'\r', '\n'}
@@ -65,10 +67,20 @@ func handleConn(conn net.Conn, allowedRoutes map[string]string) {
 		log.Print("[warn] empty whitelist of routes")
 	}
 
+	// The server may close an inactive connection after about 15 seconds.
+	if err := conn.SetReadDeadline(time.Now().Add(inactivityTimeout)); err != nil {
+		log.Printf("[err] failed to set read deadline: %v", err)
+		return
+	}
+
 	// A request ends with LF. The preceding CR is optional.
 	reader := bufio.NewReader(conn)
 	rawRequest, err := reader.ReadString('\n')
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			log.Print("[warn] closing inactive connection")
+			return
+		}
 		log.Printf("[err] unable to read request: %v", err)
 		writeErrResponse(conn)
 		return
@@ -129,9 +141,19 @@ func writeResponse(conn net.Conn, res []byte) {
 	// Response lines end with LF. CR is optional.
 	res = append(res, crlf...)
 
+	// Stop waiting if the client does not read the response.
+	if err := conn.SetWriteDeadline(time.Now().Add(inactivityTimeout)); err != nil {
+		log.Printf("[err] failed to set write deadline: %v", err)
+		return
+	}
+
 	// HTTP/0.9 sends the document as a raw byte stream.
 	count, err := conn.Write(res)
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			log.Print("[warn] response timed out")
+			return
+		}
 		// A client-aborted transfer is not recorded as an error.
 		if !isClientAbort(err) {
 			log.Printf("[err] failed to write response: %v", err)

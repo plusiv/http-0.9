@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"time"
 )
 
 // main reads a request from an argument or stdin.
@@ -49,7 +48,7 @@ func sendRequest(host, port string, request io.Reader) (int64, string, error) {
 	address := net.JoinHostPort(host, port)
 
 	// The client opens a TCP connection to the given host and port.
-	conn, err := net.DialTimeout("tcp", address, 20*time.Second)
+	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return bytesSent, "", fmt.Errorf(
 			"unable to establish a connection with %s: %w",
